@@ -1,0 +1,27 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Testes do motor
+        run: python -m unittest discover -s tests -v
+      - name: Sintaxe e metadados
+        run: |
+          python -m py_compile cotacli.py
+          bash -n install-widget.sh
+          python -m json.tool cotacli-widget/metadata.json >/dev/null

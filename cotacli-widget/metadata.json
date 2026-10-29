@@ -1,0 +1,16 @@
+{
+  "KPlugin": {
+    "Id": "org.cotacli.quotas",
+    "Name": "CotaCLI",
+    "Description": "Cotas locais de Codex, Antigravity e Claude Code",
+    "Icon": "view-statistics",
+    "Category": "System Information",
+    "EnabledByDefault": true,
+    "License": "MIT",
+    "Version": "0.1.4"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "X-Plasma-NotificationArea": "true",
+  "X-Plasma-NotificationAreaCategory": "ApplicationStatus"
+}
