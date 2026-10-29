@@ -9,6 +9,12 @@
 
 O CotaCLI reúne as cotas de **Codex** e **Antigravity** sem abrir vários painéis. No Plasma, fica ao lado de Wi-Fi, bateria e relógio: o ícone mostra um resumo ao passar o mouse e abre os detalhes ao clicar. No Konsole, `cotacli` exibe a mesma informação em uma tabela compacta.
 
+| Bandeja do KDE Plasma 6 | Terminal |
+| --- | --- |
+| <img src="docs/images/plasma-tray.png" alt="Painel CotaCLI com cartões de Codex, Gemini e Claude+GPT na bandeja do Plasma" width="420"> | <img src="docs/images/terminal.png" alt="CotaCLI no terminal com cotas restantes e horários de renovação" width="420"> |
+
+Capturas reais do protótipo no CachyOS, enviadas pelo autor. Os percentuais mudam conforme a conta e o horário.
+
 | Fonte | Janela de 5 horas | Semanal | Como é lida |
 | --- | --- | --- | --- |
 | Codex CLI | Saldo e renovação | Saldo e renovação | `codex app-server` |
@@ -18,9 +24,15 @@ O CotaCLI reúne as cotas de **Codex** e **Antigravity** sem abrir vários pain�
 
 > **AGY / Claude+GPT** é a cota compartilhada de modelos dentro do Antigravity. Não representa uma assinatura do Claude Code. Se Claude Code estiver instalado, mas não fornecer cota válida, ele não aparece.
 
+## E se eu não uso KDE Plasma?
+
+O **monitor no terminal** funciona no Linux com Python 3.10+ sem instalar o widget. O instalador `install-widget.sh` e o painel da bandeja são específicos do **KDE Plasma 6**. Windows, macOS e outros desktops ainda não têm interface oficial nem instalação homologada.
+
+Quer adaptar o projeto para o seu ambiente? Copie o [prompt de adaptação](docs/prompt.md), informe seu sistema operacional e ambiente gráfico, e peça ao seu agente de código para criar uma interface equivalente a partir deste repositório. O prompt exige testes reais no sistema de destino e documentação honesta; ele **não instala nem adapta o software sozinho**.
+
 ## Instalação rápida no CachyOS / Plasma 6
 
-Requer **Python 3.10+**, `kpackagetool6` e o módulo `plasma5support` do KDE. Os provedores só aparecem se suas CLIs estiverem disponíveis e, quando necessário, autenticadas.
+Requer **Python 3.10+**, `kpackagetool6` e o módulo `plasma5support` do KDE. Um provedor aparece quando sua CLI é detectada; se faltar autenticação ou a leitura falhar, o painel indica a indisponibilidade em vez de inventar valores.
 
 ```sh
 git clone https://github.com/hallanbrito/CotaCLI.git

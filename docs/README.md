@@ -4,3 +4,4 @@
 - [Comandos e formato JSON](cli.md): uso da CLI e integração com outras interfaces.
 - [Provedores e limites](provedores.md): de onde vêm as cotas e o que ainda não é suportado.
 - [Arquitetura](arquitetura.md): fluxo de dados, cache e escolhas de segurança.
+- [Prompt para outros sistemas](prompt.md): roteiro copiável para adaptar o CotaCLI fora do KDE Plasma 6.
