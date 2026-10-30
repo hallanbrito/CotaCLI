@@ -41,14 +41,22 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertIn("não suportado (requer >= 3.10)", output)
 
     def test_doctor_fails_when_xdg_directories_not_accessible(self):
-        bad_path = Path("/root/nonexistent_cotacli_protected_directory_xyz")
-        with patch.object(cotacli, "CONFIG_DIR", bad_path), \
-             patch("sys.stdout", new_callable=StringIO) as out:
-            code = cotacli.doctor()
-            self.assertEqual(code, 1)
-            output = out.getvalue()
-            self.assertIn("FALHA", output)
-            self.assertIn("Config:", output)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            locked_parent = temp_path / "locked"
+            locked_parent.mkdir()
+            os.chmod(locked_parent, 0o500)
+            target = locked_parent / "cotacli"
+            try:
+                with patch.object(cotacli, "CONFIG_DIR", target), \
+                     patch("sys.stdout", new_callable=StringIO) as out:
+                    code = cotacli.doctor()
+                    self.assertEqual(code, 1)
+                    output = out.getvalue()
+                    self.assertIn("FALHA", output)
+                    self.assertIn("Config:", output)
+            finally:
+                os.chmod(locked_parent, 0o700)
 
     def test_doctor_optional_clis_missing_does_not_fail(self):
         with tempfile.TemporaryDirectory() as temp_dir:

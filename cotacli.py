@@ -457,16 +457,19 @@ def check_python_version() -> tuple[bool, str]:
 
 
 def check_dir_accessible(path: Path) -> tuple[bool, str]:
-    if path.exists():
-        if not path.is_dir():
-            return False, f"caminho existe mas não é diretório: {path}"
-        if not os.access(path, os.R_OK | os.W_OK):
-            return False, f"permissão insuficiente (leitura/escrita) em {path}"
-        return True, f"acessível ({path})"
-    parent = path.parent
-    if parent.exists() and os.access(parent, os.W_OK | os.X_OK):
-        return True, f"pronto para criação ({path})"
-    return False, f"diretório pai não gravável para criar {path}"
+    try:
+        if path.exists():
+            if not path.is_dir():
+                return False, f"caminho existe mas não é diretório: {path}"
+            if not os.access(path, os.R_OK | os.W_OK):
+                return False, f"permissão insuficiente (leitura/escrita) em {path}"
+            return True, f"acessível ({path})"
+        parent = path.parent
+        if parent.exists() and os.access(parent, os.W_OK | os.X_OK):
+            return True, f"pronto para criação ({path})"
+        return False, f"diretório pai não gravável para criar {path}"
+    except (PermissionError, OSError) as exc:
+        return False, f"sem acesso ao caminho ({exc}): {path}"
 
 
 def check_cli_tool(name: str, label: str) -> tuple[str, str]:
