@@ -277,6 +277,54 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertEqual(code, 0)
             mock_doc.assert_called_once()
 
+    def test_check_cache_metadata_handles_permission_error_on_exists(self):
+        """AUD-04: PermissionError em path.exists() deve ser tratado como ALERTA sem lançar exceção."""
+        mock_path = MagicMock(spec=Path)
+        mock_path.exists.side_effect = PermissionError(13, "Permission denied")
+        status, msg = cotacli.check_cache_metadata(mock_path, "Cache AGY")
+        self.assertEqual(status, "ALERTA")
+        self.assertIn("erro ao consultar metadados", msg)
+        self.assertIn("Permission denied", msg)
+
+    def test_check_cache_metadata_handles_permission_error_on_stat(self):
+        """AUD-04: PermissionError em path.stat() deve ser tratado como ALERTA sem lançar exceção."""
+        mock_path = MagicMock(spec=Path)
+        mock_path.exists.return_value = True
+        mock_path.stat.side_effect = PermissionError(13, "Permission denied")
+        status, msg = cotacli.check_cache_metadata(mock_path, "Cache Codex")
+        self.assertEqual(status, "ALERTA")
+        self.assertIn("erro ao consultar metadados", msg)
+        self.assertIn("Permission denied", msg)
+
+    def test_doctor_handles_inaccessible_cache_and_config_without_traceback(self):
+        """AUD-04 integração: diretório inacessível gera diagnóstico controlado com FALHA e exit code 1."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            locked_dir = temp_path / "locked_root"
+            locked_dir.mkdir()
+            # Diretório sem permissão de travessia e leitura
+            os.chmod(locked_dir, 0o000)
+            try:
+                target_config = locked_dir / "cotacli_cfg"
+                target_cache = locked_dir / "cotacli_cache"
+                with patch.object(cotacli, "CONFIG_DIR", target_config), \
+                     patch.object(cotacli, "CACHE_DIR", target_cache), \
+                     patch.object(cotacli, "CODEX_PATH", target_cache / "codex.json"), \
+                     patch.object(cotacli, "AGY_CACHE_PATH", target_cache / "agy.json"), \
+                     patch.object(cotacli, "CLAUDE_PATH", target_cache / "claude.json"), \
+                     patch.object(cotacli, "AGY_MANUAL_PATH", target_config / "antigravity.json"), \
+                     patch.object(cotacli, "CLI_PATHS", target_config / "cli-paths.json"), \
+                     patch("sys.stdout", new_callable=StringIO) as out:
+                    code = cotacli.doctor()
+                    self.assertEqual(code, 1)
+                    output = out.getvalue()
+                    self.assertIn("FALHA", output)
+                    self.assertIn("RESUMO DO DIAGNÓSTICO", output)
+                    self.assertIn("Resultado: FALHA", output)
+                    self.assertNotIn("Traceback", output)
+            finally:
+                os.chmod(locked_dir, 0o700)
+
 
 if __name__ == "__main__":
     unittest.main()

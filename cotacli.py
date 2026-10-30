@@ -495,9 +495,9 @@ def check_cli_tool(name: str, label: str) -> tuple[str, str]:
 
 def check_cache_metadata(path: Path, label: str, is_expirable: bool = True) -> tuple[str, str]:
     """Consulta apenas stat do arquivo de cache/config, sem inspecionar conteúdo ou segredos."""
-    if not path.exists():
-        return "INFO", f"{label}: nenhum registro encontrado (normal na primeira execução ou se não configurado)"
     try:
+        if not path.exists():
+            return "INFO", f"{label}: nenhum registro encontrado (normal na primeira execução ou se não configurado)"
         st = path.stat()
         age_seconds = time.time() - st.st_mtime
         age_minutes = int(max(0, age_seconds) // 60)
@@ -507,7 +507,7 @@ def check_cache_metadata(path: Path, label: str, is_expirable: bool = True) -> t
         if age_seconds < CACHE_TTL_SECONDS:
             return "OK", f"{label}: cache recente ({age_minutes}min, {size} bytes)"
         return "ALERTA", f"{label}: cache antigo/expirado há {age_minutes}min (será renovado no próximo acesso)"
-    except OSError as exc:
+    except (PermissionError, OSError) as exc:
         return "ALERTA", f"{label}: erro ao consultar metadados ({exc})"
 
 
@@ -525,10 +525,13 @@ def check_plasma_environment() -> list[tuple[str, str]]:
         else:
             results.append(("ALERTA", "kpackagetool6: não encontrado (necessário para instalar widget)"))
         widget_dir = Path.home() / ".local/share/plasma/plasmoids/org.cotacli.widget"
-        if widget_dir.exists():
-            results.append(("OK", f"Widget do Plasma: instalado em {widget_dir}"))
-        else:
-            results.append(("INFO", "Widget do Plasma: não instalado (opcional; execute bash install-widget.sh)"))
+        try:
+            if widget_dir.exists():
+                results.append(("OK", f"Widget do Plasma: instalado em {widget_dir}"))
+            else:
+                results.append(("INFO", "Widget do Plasma: não instalado (opcional; execute bash install-widget.sh)"))
+        except (PermissionError, OSError) as exc:
+            results.append(("ALERTA", f"Widget do Plasma: erro ao verificar instalação ({exc})"))
     else:
         results.append(("INFO", f"Ambiente de desktop: {current_desktop or 'terminal/outro'} (modo terminal ativo; Plasma 6 opcional)"))
     return results
@@ -611,8 +614,13 @@ def doctor() -> int:
             print("  • Execute 'cotacli' para visualizar o painel de cotas no terminal.")
             print("  • Execute 'cotacli refresh' se precisar forçar nova consulta às CLIs.")
         current_desktop = os.getenv("XDG_CURRENT_DESKTOP", "")
-        if "KDE" in current_desktop.upper() and not (Path.home() / ".local/share/plasma/plasmoids/org.cotacli.widget").exists():
-            print("  • Para instalar o widget na bandeja do KDE Plasma 6, execute: bash install-widget.sh")
+        if "KDE" in current_desktop.upper():
+            try:
+                widget_installed = (Path.home() / ".local/share/plasma/plasmoids/org.cotacli.widget").exists()
+            except (PermissionError, OSError):
+                widget_installed = False
+            if not widget_installed:
+                print("  • Para instalar o widget na bandeja do KDE Plasma 6, execute: bash install-widget.sh")
         return 0
 
     print(f"  Resultado: {color('FALHA', '31')} ({essential_errors} falha(s) essencial(is) detectada(s))")
