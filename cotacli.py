@@ -26,6 +26,11 @@ CODEX_PATH = CACHE_DIR / "codex.json"
 CLAUDE_PATH = CACHE_DIR / "claude.json"
 CLI_PATHS = CONFIG_DIR / "cli-paths.json"
 GROUPS = {"agy-gemini": "AGY / Gemini", "agy-others": "AGY / Claude+GPT"}
+PLASMA_WIDGET_ID = "org.cotacli.quotas"
+
+
+def plasma_widget_path() -> Path:
+    return Path.home() / ".local/share/plasma/plasmoids" / PLASMA_WIDGET_ID
 
 
 def read_json(path: Path) -> dict:
@@ -524,7 +529,7 @@ def check_plasma_environment() -> list[tuple[str, str]]:
             results.append(("OK", f"kpackagetool6: detectado em {kpackagetool}"))
         else:
             results.append(("ALERTA", "kpackagetool6: não encontrado (necessário para instalar widget)"))
-        widget_dir = Path.home() / ".local/share/plasma/plasmoids/org.cotacli.widget"
+        widget_dir = plasma_widget_path()
         try:
             if widget_dir.exists():
                 results.append(("OK", f"Widget do Plasma: instalado em {widget_dir}"))
@@ -616,7 +621,7 @@ def doctor() -> int:
         current_desktop = os.getenv("XDG_CURRENT_DESKTOP", "")
         if "KDE" in current_desktop.upper():
             try:
-                widget_installed = (Path.home() / ".local/share/plasma/plasmoids/org.cotacli.widget").exists()
+                widget_installed = plasma_widget_path().exists()
             except (PermissionError, OSError):
                 widget_installed = False
             if not widget_installed:

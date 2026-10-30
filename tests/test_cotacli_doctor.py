@@ -270,6 +270,94 @@ class DoctorCommandTests(unittest.TestCase):
             statuses = [r[0] for r in results]
             self.assertIn("OK", statuses)
 
+    def test_widget_identifier_consistency_across_python_metadata_and_installer(self):
+        """COTA-01.1: ID do widget deve ser idêntico em cotacli.py, metadata.json e install-widget.sh."""
+        repo_root = Path(__file__).resolve().parent.parent
+        metadata_file = repo_root / "cotacli-widget" / "metadata.json"
+        installer_file = repo_root / "install-widget.sh"
+
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+        plugin_id = metadata.get("KPlugin", {}).get("Id")
+        self.assertEqual(plugin_id, cotacli.PLASMA_WIDGET_ID)
+        self.assertEqual(cotacli.PLASMA_WIDGET_ID, "org.cotacli.quotas")
+
+        installer_content = installer_file.read_text(encoding="utf-8")
+        self.assertIn(f"plasmoids/{cotacli.PLASMA_WIDGET_ID}", installer_content)
+
+        widget_path = cotacli.plasma_widget_path()
+        self.assertEqual(widget_path.name, cotacli.PLASMA_WIDGET_ID)
+
+    def test_doctor_kde_environment_with_widget_installed_does_not_recommend_installation(self):
+        """COTA-01.1: Se widget org.cotacli.quotas existir, relata OK e não instrui instalar."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            cfg = temp_path / "config"
+            cache = temp_path / "cache"
+            cfg.mkdir()
+            cache.mkdir()
+
+            plasmoid_dir = temp_path / ".local" / "share" / "plasma" / "plasmoids" / cotacli.PLASMA_WIDGET_ID
+            plasmoid_dir.mkdir(parents=True)
+
+            with patch.object(Path, "home", return_value=temp_path), \
+                 patch.object(cotacli, "CONFIG_DIR", cfg), \
+                 patch.object(cotacli, "CACHE_DIR", cache), \
+                 patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": "KDE"}), \
+                 patch("shutil.which", return_value="/usr/bin/kpackagetool6"), \
+                 patch("sys.stdout", new_callable=StringIO) as out:
+                results = cotacli.check_plasma_environment()
+                statuses = [r[0] for r in results]
+                self.assertIn("OK", statuses)
+                installed_msg = [r[1] for r in results if "Widget do Plasma:" in r[1]][0]
+                self.assertIn("instalado em", installed_msg)
+                self.assertIn(cotacli.PLASMA_WIDGET_ID, installed_msg)
+
+                code = cotacli.doctor()
+                self.assertEqual(code, 0)
+                output = out.getvalue()
+                self.assertIn(f"Widget do Plasma: instalado em {plasmoid_dir}", output)
+                self.assertNotIn("bash install-widget.sh", output)
+
+    def test_doctor_kde_environment_with_widget_missing_recommends_installation(self):
+        """COTA-01.1: Se widget estiver ausente em ambiente KDE, informa opcional e instrui instalar."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            cfg = temp_path / "config"
+            cache = temp_path / "cache"
+            cfg.mkdir()
+            cache.mkdir()
+
+            with patch.object(Path, "home", return_value=temp_path), \
+                 patch.object(cotacli, "CONFIG_DIR", cfg), \
+                 patch.object(cotacli, "CACHE_DIR", cache), \
+                 patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": "KDE"}), \
+                 patch("shutil.which", return_value="/usr/bin/kpackagetool6"), \
+                 patch("sys.stdout", new_callable=StringIO) as out:
+                results = cotacli.check_plasma_environment()
+                missing_msg = [r[1] for r in results if "Widget do Plasma:" in r[1]][0]
+                self.assertIn("não instalado", missing_msg)
+
+                code = cotacli.doctor()
+                self.assertEqual(code, 0)
+                output = out.getvalue()
+                self.assertIn("Widget do Plasma: não instalado", output)
+                self.assertIn("bash install-widget.sh", output)
+
+    def test_doctor_plasma_widget_handles_permission_error_gracefully(self):
+        """COTA-01.1: PermissionError na verificação do widget é tratado como ALERTA sem traceback."""
+        mock_widget_path = MagicMock(spec=Path)
+        mock_widget_path.exists.side_effect = PermissionError(13, "Permission denied")
+
+        with patch.object(cotacli, "plasma_widget_path", return_value=mock_widget_path), \
+             patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": "KDE"}), \
+             patch("shutil.which", return_value="/usr/bin/kpackagetool6"):
+            results = cotacli.check_plasma_environment()
+            statuses = [r[0] for r in results]
+            self.assertIn("ALERTA", statuses)
+            error_msg = [r[1] for r in results if "Widget do Plasma:" in r[1]][0]
+            self.assertIn("erro ao verificar instalação", error_msg)
+            self.assertIn("Permission denied", error_msg)
+
     def test_main_cli_invokes_doctor(self):
         with patch.object(sys, "argv", ["cotacli", "doctor"]), \
              patch.object(cotacli, "doctor", return_value=0) as mock_doc:
