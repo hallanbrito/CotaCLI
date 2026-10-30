@@ -3,6 +3,7 @@
 | Comando | Efeito |
 | --- | --- |
 | `cotacli` / `cotacli show` | Exibe a tabela com cache de até 10 minutos. |
+| `cotacli doctor` | Diagnóstico local offline e somente leitura do ambiente e ferramentas. |
 | `cotacli refresh` | Força leitura do Codex e do AGY; Claude Code depende da próxima captura da status line. |
 | `cotacli snapshot` | Retorna um único objeto JSON para interfaces. |
 | `cotacli snapshot --refresh` | Retorna JSON após forçar as leituras disponíveis. |

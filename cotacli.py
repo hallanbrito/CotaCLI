@@ -445,6 +445,193 @@ def snapshot(force: bool = False) -> dict:
     return {"schema": 1, "providers": providers, "updated": time.time()}
 
 
+def check_python_version() -> tuple[bool, str]:
+    version = sys.version_info
+    major = getattr(version, "major", version[0])
+    minor = getattr(version, "minor", version[1])
+    micro = getattr(version, "micro", version[2]) if len(version) > 2 else 0
+    ver_str = f"{major}.{minor}.{micro}"
+    if (major, minor) >= (3, 10):
+        return True, f"Python {ver_str} (>= 3.10 suportado)"
+    return False, f"Python {ver_str} não suportado (requer >= 3.10)"
+
+
+def check_dir_accessible(path: Path) -> tuple[bool, str]:
+    try:
+        resolved = path.resolve()
+        if resolved.exists():
+            if not resolved.is_dir():
+                return False, f"caminho existe mas não é diretório: {resolved}"
+            if not os.access(resolved, os.R_OK | os.W_OK | os.X_OK):
+                return False, f"permissão insuficiente (leitura/escrita/travessia) em {resolved}"
+            return True, f"acessível ({resolved})"
+
+        for ancestor in resolved.parents:
+            try:
+                if ancestor.exists():
+                    if not ancestor.is_dir():
+                        return False, f"ancestral existente não é diretório: {ancestor}"
+                    if not os.access(ancestor, os.W_OK | os.X_OK):
+                        return (
+                            False,
+                            f"ancestral existente ({ancestor}) sem permissão de escrita/travessia para criar {resolved}",
+                        )
+                    return True, f"pronto para criação (ancestral {ancestor} gravável)"
+            except (PermissionError, OSError) as exc:
+                return False, f"sem acesso ao ancestral {ancestor} ({exc})"
+
+        return False, f"nenhum ancestral existente encontrado para {resolved}"
+    except (PermissionError, OSError) as exc:
+        return False, f"sem acesso ao caminho ({exc}): {path}"
+
+
+def check_cli_tool(name: str, label: str) -> tuple[str, str]:
+    """Verifica presença da CLI sem executar processos ou registrar caminhos."""
+    path = find_cli(name)
+    if path:
+        return "OK", f"{label}: detectado em {path} (opcional; cotas requerem autenticação local)"
+    return "INDISPONÍVEL", f"{label}: não encontrado no PATH nem no registro local (opcional)"
+
+
+def check_cache_metadata(path: Path, label: str, is_expirable: bool = True) -> tuple[str, str]:
+    """Consulta apenas stat do arquivo de cache/config, sem inspecionar conteúdo ou segredos."""
+    try:
+        if not path.exists():
+            return "INFO", f"{label}: nenhum registro encontrado (normal na primeira execução ou se não configurado)"
+        st = path.stat()
+        age_seconds = time.time() - st.st_mtime
+        age_minutes = int(max(0, age_seconds) // 60)
+        size = st.st_size
+        if not is_expirable:
+            return "OK", f"{label}: presente ({size} bytes, salvo há {age_minutes}min)"
+        if age_seconds < CACHE_TTL_SECONDS:
+            return "OK", f"{label}: cache recente ({age_minutes}min, {size} bytes)"
+        return "ALERTA", f"{label}: cache antigo/expirado há {age_minutes}min (será renovado no próximo acesso)"
+    except (PermissionError, OSError) as exc:
+        return "ALERTA", f"{label}: erro ao consultar metadados ({exc})"
+
+
+def check_plasma_environment() -> list[tuple[str, str]]:
+    """Avalia integração Plasma 6 sem exigir KDE para uso em terminal."""
+    current_desktop = os.getenv("XDG_CURRENT_DESKTOP", "")
+    kde_session = os.getenv("KDE_FULL_SESSION", "")
+    is_kde = "KDE" in current_desktop.upper() or kde_session.lower() == "true"
+    results = []
+    if is_kde:
+        results.append(("INFO", f"Ambiente de desktop: KDE Plasma detectado ({current_desktop})"))
+        kpackagetool = shutil.which("kpackagetool6")
+        if kpackagetool:
+            results.append(("OK", f"kpackagetool6: detectado em {kpackagetool}"))
+        else:
+            results.append(("ALERTA", "kpackagetool6: não encontrado (necessário para instalar widget)"))
+        widget_dir = Path.home() / ".local/share/plasma/plasmoids/org.cotacli.widget"
+        try:
+            if widget_dir.exists():
+                results.append(("OK", f"Widget do Plasma: instalado em {widget_dir}"))
+            else:
+                results.append(("INFO", "Widget do Plasma: não instalado (opcional; execute bash install-widget.sh)"))
+        except (PermissionError, OSError) as exc:
+            results.append(("ALERTA", f"Widget do Plasma: erro ao verificar instalação ({exc})"))
+    else:
+        results.append(("INFO", f"Ambiente de desktop: {current_desktop or 'terminal/outro'} (modo terminal ativo; Plasma 6 opcional)"))
+    return results
+
+
+def doctor() -> int:
+    """Diagnóstico local, offline e estritamente somente leitura do ambiente."""
+    print(color("COTACLI  /  DOCTOR", "1;36") + color(f"  v{VERSION}", "2"))
+    print(color("─" * 60, "2"))
+
+    essential_errors = 0
+    warnings = 0
+
+    print(color("1. AMBIENTE DE EXECUÇÃO", "1"))
+    py_ok, py_msg = check_python_version()
+    if py_ok:
+        print(f"  [{color('OK', '32')}] {py_msg}")
+    else:
+        print(f"  [{color('FALHA', '31')}] {py_msg}")
+        essential_errors += 1
+
+    print(color("\n2. DIRETÓRIOS E PERMISSÕES (XDG)", "1"))
+    cfg_ok, cfg_msg = check_dir_accessible(CONFIG_DIR)
+    if cfg_ok:
+        print(f"  [{color('OK', '32')}] Config: {cfg_msg}")
+    else:
+        print(f"  [{color('FALHA', '31')}] Config: {cfg_msg}")
+        essential_errors += 1
+
+    cache_ok, cache_msg = check_dir_accessible(CACHE_DIR)
+    if cache_ok:
+        print(f"  [{color('OK', '32')}] Cache: {cache_msg}")
+    else:
+        print(f"  [{color('FALHA', '31')}] Cache: {cache_msg}")
+        essential_errors += 1
+
+    print(color("\n3. FERRAMENTAS DE IA (OPCIONAIS)", "1"))
+    cli_found_count = 0
+    for name, label in (("codex", "Codex CLI"), ("agy", "Antigravity (AGY) CLI"), ("claude", "Claude Code")):
+        status, msg = check_cli_tool(name, label)
+        if status == "OK":
+            cli_found_count += 1
+            print(f"  [{color('OK', '32')}] {msg}")
+        else:
+            print(f"  [{color('INDISPONÍVEL', '33')}] {msg}")
+    if cli_found_count == 0:
+        print(f"  [{color('ALERTA', '33')}] Nenhuma ferramenta detectada (opcional para diagnóstico; cotas não serão exibidas)")
+        warnings += 1
+
+    print(color("\n4. ESTADO DO CACHE LOCAL (METADADOS)", "1"))
+    cache_checks = [
+        (CODEX_PATH, "Cache Codex", True),
+        (AGY_CACHE_PATH, "Cache AGY", True),
+        (CLAUDE_PATH, "Cache Claude Code", True),
+        (AGY_MANUAL_PATH, "Contingência manual (antigravity.json)", False),
+        (CLI_PATHS, "Registro de caminhos (cli-paths.json)", False),
+    ]
+    for path, label, expirable in cache_checks:
+        status, msg = check_cache_metadata(path, label, expirable)
+        tag_color = "32" if status == "OK" else "33" if status == "ALERTA" else "2"
+        print(f"  [{color(status, tag_color)}] {msg}")
+        if status == "ALERTA":
+            warnings += 1
+
+    print(color("\n5. INTERFACE GRÁFICA (KDE PLASMA 6 - OPCIONAL)", "1"))
+    for status, msg in check_plasma_environment():
+        tag_color = "32" if status == "OK" else "33" if status == "ALERTA" else "2"
+        print(f"  [{color(status, tag_color)}] {msg}")
+        if status == "ALERTA":
+            warnings += 1
+
+    print(color("\n" + "─" * 60, "2"))
+    print(color("RESUMO DO DIAGNÓSTICO", "1"))
+    if essential_errors == 0:
+        print(f"  Resultado: {color('APROVADO', '32')} (0 falhas essenciais, {warnings} alerta(s)/informativo(s))")
+        print("\nPróximos passos recomendados:")
+        if cli_found_count == 0:
+            print("  • Instale e autentique ao menos uma das ferramentas suportadas (Codex, AGY ou Claude Code).")
+        else:
+            print("  • Execute 'cotacli' para visualizar o painel de cotas no terminal.")
+            print("  • Execute 'cotacli refresh' se precisar forçar nova consulta às CLIs.")
+        current_desktop = os.getenv("XDG_CURRENT_DESKTOP", "")
+        if "KDE" in current_desktop.upper():
+            try:
+                widget_installed = (Path.home() / ".local/share/plasma/plasmoids/org.cotacli.widget").exists()
+            except (PermissionError, OSError):
+                widget_installed = False
+            if not widget_installed:
+                print("  • Para instalar o widget na bandeja do KDE Plasma 6, execute: bash install-widget.sh")
+        return 0
+
+    print(f"  Resultado: {color('FALHA', '31')} ({essential_errors} falha(s) essencial(is) detectada(s))")
+    print("\nPróximos passos para correção:")
+    if not py_ok:
+        print("  • Atualize a versão do Python para 3.10 ou superior.")
+    if not (cfg_ok and cache_ok):
+        print("  • Verifique as permissões de gravação nos diretórios XDG do usuário.")
+    return 1
+
+
 def show(force: bool = False) -> None:
     codex_installed = find_cli("codex") is not None
     agy_installed = find_cli("agy") is not None
@@ -479,6 +666,7 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("show", help="Mostra o painel (padrão)")
     sub.add_parser("refresh", help="Força nova leitura das cotas do Codex e do AGY")
+    sub.add_parser("doctor", help="Diagnóstico local offline do ambiente e dependências")
     sub.add_parser("discover", help="Registra caminhos das CLIs para o widget do Plasma")
     snap = sub.add_parser("snapshot", help="Entrega JSON para o widget do Plasma")
     snap.add_argument("--refresh", action="store_true", help="Força nova leitura")
@@ -495,6 +683,8 @@ def main() -> int:
     if args.command == "snapshot":
         print(json.dumps(snapshot(force=args.refresh), ensure_ascii=False))
         return 0
+    if args.command == "doctor":
+        return doctor()
     if args.command == "discover":
         detected = discover_cli_paths()
         print("CLIs detectadas: " + (", ".join(detected) if detected else "nenhuma"))
