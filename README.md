@@ -54,9 +54,50 @@ install -Dm755 cotacli.py "$HOME/.local/bin/cotacli"
 
 ```sh
 cotacli                   # leitura usando cache de até 10 minutos
+cotacli doctor            # diagnóstico local e offline do ambiente
 cotacli refresh           # força nova consulta ao Codex e ao AGY
 cotacli snapshot          # JSON consumido pelo widget
 cotacli discover          # atualiza os caminhos das CLIs instaladas
+```
+
+### Diagnóstico com `cotacli doctor`
+
+O comando `cotacli doctor` realiza uma verificação local, estritamente offline e somente leitura, sem consumir tokens, sem disparar processos de provedores e sem alterar arquivos:
+
+```text
+COTACLI  /  DOCTOR  v0.2.1.dev0
+────────────────────────────────────────────────────────────
+1. AMBIENTE DE EXECUÇÃO
+  [OK] Python 3.12.3 (>= 3.10 suportado)
+
+2. DIRETÓRIOS E PERMISSÕES (XDG)
+  [OK] Config: acessível (~/.config/cotacli)
+  [OK] Cache: acessível (~/.cache/cotacli)
+
+3. FERRAMENTAS DE IA (OPCIONAIS)
+  [OK] Codex CLI: detectado em ~/.local/bin/codex (opcional; cotas requerem autenticação local)
+  [OK] Antigravity (AGY) CLI: detectado em ~/.local/bin/agy (opcional; cotas requerem autenticação local)
+  [INDISPONÍVEL] Claude Code: não encontrado no PATH nem no registro local (opcional)
+
+4. ESTADO DO CACHE LOCAL (METADADOS)
+  [OK] Cache Codex: cache recente (3min, 245 bytes)
+  [OK] Cache AGY: cache recente (1min, 512 bytes)
+  [INFO] Cache Claude Code: nenhum registro encontrado (normal na primeira execução ou se não configurado)
+  [INFO] Contingência manual (antigravity.json): nenhum registro encontrado (normal na primeira execução ou se não configurado)
+  [OK] Registro de caminhos (cli-paths.json): presente (215 bytes, salvo há 120min)
+
+5. INTERFACE GRÁFICA (KDE PLASMA 6 - OPCIONAL)
+  [INFO] Ambiente de desktop: KDE Plasma detectado (KDE)
+  [OK] kpackagetool6: detectado em /usr/bin/kpackagetool6
+  [INFO] Widget do Plasma: não instalado (opcional; execute bash install-widget.sh)
+
+────────────────────────────────────────────────────────────
+RESUMO DO DIAGNÓSTICO
+  Resultado: APROVADO (0 falhas essenciais, 0 alerta(s)/informativo(s))
+
+Próximos passos recomendados:
+  • Execute 'cotacli' para visualizar o painel de cotas no terminal.
+  • Execute 'cotacli refresh' se precisar forçar nova consulta às CLIs.
 ```
 
 Se `cotacli` não for encontrado no seu shell, use `~/.local/bin/cotacli`. Uma consulta do AGY pode levar até 60 segundos. O widget executa a consulta fora da interface gráfica para não travar o Plasma.
