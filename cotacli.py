@@ -458,16 +458,29 @@ def check_python_version() -> tuple[bool, str]:
 
 def check_dir_accessible(path: Path) -> tuple[bool, str]:
     try:
-        if path.exists():
-            if not path.is_dir():
-                return False, f"caminho existe mas não é diretório: {path}"
-            if not os.access(path, os.R_OK | os.W_OK):
-                return False, f"permissão insuficiente (leitura/escrita) em {path}"
-            return True, f"acessível ({path})"
-        parent = path.parent
-        if parent.exists() and os.access(parent, os.W_OK | os.X_OK):
-            return True, f"pronto para criação ({path})"
-        return False, f"diretório pai não gravável para criar {path}"
+        resolved = path.resolve()
+        if resolved.exists():
+            if not resolved.is_dir():
+                return False, f"caminho existe mas não é diretório: {resolved}"
+            if not os.access(resolved, os.R_OK | os.W_OK | os.X_OK):
+                return False, f"permissão insuficiente (leitura/escrita/travessia) em {resolved}"
+            return True, f"acessível ({resolved})"
+
+        for ancestor in resolved.parents:
+            try:
+                if ancestor.exists():
+                    if not ancestor.is_dir():
+                        return False, f"ancestral existente não é diretório: {ancestor}"
+                    if not os.access(ancestor, os.W_OK | os.X_OK):
+                        return (
+                            False,
+                            f"ancestral existente ({ancestor}) sem permissão de escrita/travessia para criar {resolved}",
+                        )
+                    return True, f"pronto para criação (ancestral {ancestor} gravável)"
+            except (PermissionError, OSError) as exc:
+                return False, f"sem acesso ao ancestral {ancestor} ({exc})"
+
+        return False, f"nenhum ancestral existente encontrado para {resolved}"
     except (PermissionError, OSError) as exc:
         return False, f"sem acesso ao caminho ({exc}): {path}"
 

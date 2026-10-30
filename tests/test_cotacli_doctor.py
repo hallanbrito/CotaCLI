@@ -58,6 +58,111 @@ class DoctorCommandTests(unittest.TestCase):
             finally:
                 os.chmod(locked_parent, 0o700)
 
+    def test_doctor_fails_when_directory_lacks_traversal_permission(self):
+        """AUD-01: diretório existente com rw- sem x (busca/travessia) deve falhar."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            cfg = temp_path / "config"
+            cache = temp_path / "cache"
+            cfg.mkdir()
+            cache.mkdir()
+            # Remove permissão de execução/travessia (rw- apenas)
+            os.chmod(cfg, 0o600)
+            try:
+                ok, msg = cotacli.check_dir_accessible(cfg)
+                self.assertFalse(ok)
+                self.assertIn("permissão insuficiente", msg)
+                self.assertIn("travessia", msg)
+
+                with patch.object(cotacli, "CONFIG_DIR", cfg), \
+                     patch.object(cotacli, "CACHE_DIR", cache), \
+                     patch("sys.stdout", new_callable=StringIO) as out:
+                    code = cotacli.doctor()
+                    self.assertEqual(code, 1)
+                    output = out.getvalue()
+                    self.assertIn("FALHA", output)
+                    self.assertIn("Config:", output)
+            finally:
+                os.chmod(cfg, 0o700)
+
+    def test_doctor_fails_when_directory_lacks_write_permission(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            cfg = temp_path / "config"
+            cfg.mkdir()
+            os.chmod(cfg, 0o500)  # r-x apenas
+            try:
+                ok, msg = cotacli.check_dir_accessible(cfg)
+                self.assertFalse(ok)
+                self.assertIn("permissão insuficiente", msg)
+            finally:
+                os.chmod(cfg, 0o700)
+
+    def test_doctor_fails_when_directory_lacks_read_permission(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            cfg = temp_path / "config"
+            cfg.mkdir()
+            os.chmod(cfg, 0o300)  # -wx apenas
+            try:
+                ok, msg = cotacli.check_dir_accessible(cfg)
+                self.assertFalse(ok)
+                self.assertIn("permissão insuficiente", msg)
+            finally:
+                os.chmod(cfg, 0o700)
+
+    def test_check_dir_accessible_succeeds_when_intermediate_ancestors_not_yet_created(self):
+        """AUD-02: caminhos ainda não criados com ancestrais intermediários faltantes são criáveis."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # temp_path existe, mas nonexistent_parent e cotacli ainda não existem
+            target = temp_path / "nonexistent_parent" / "cotacli"
+            ok, msg = cotacli.check_dir_accessible(target)
+            self.assertTrue(ok)
+            self.assertIn("pronto para criação", msg)
+            self.assertIn("gravável", msg)
+            # Garante que check_dir_accessible não criou nada
+            self.assertFalse(target.exists())
+            self.assertFalse((temp_path / "nonexistent_parent").exists())
+
+    def test_check_dir_accessible_fails_when_ancestor_is_a_file(self):
+        """AUD-02: se um ancestral existente for arquivo, não pode indicar pronto para criação."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            file_ancestor = temp_path / "file_as_parent"
+            file_ancestor.write_text("arquivo regular", encoding="utf-8")
+            target = file_ancestor / "sub" / "cotacli"
+
+            ok, msg = cotacli.check_dir_accessible(target)
+            self.assertFalse(ok)
+            self.assertIn("ancestral existente não é diretório", msg)
+            self.assertNotIn("pronto para criação", msg)
+
+    def test_check_dir_accessible_fails_when_target_itself_is_a_file(self):
+        """Verifica se o alvo configurado existir como arquivo regular."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            target_file = temp_path / "target_file"
+            target_file.write_text("arquivo", encoding="utf-8")
+
+            ok, msg = cotacli.check_dir_accessible(target_file)
+            self.assertFalse(ok)
+            self.assertIn("caminho existe mas não é diretório", msg)
+
+    def test_check_dir_accessible_fails_when_ancestor_lacks_write_or_exec_permission(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            locked = temp_path / "locked"
+            locked.mkdir()
+            os.chmod(locked, 0o500)  # r-x sem escrita
+            target = locked / "missing_sub" / "cotacli"
+            try:
+                ok, msg = cotacli.check_dir_accessible(target)
+                self.assertFalse(ok)
+                self.assertIn("sem permissão de escrita/travessia", msg)
+            finally:
+                os.chmod(locked, 0o700)
+
     def test_doctor_optional_clis_missing_does_not_fail(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
